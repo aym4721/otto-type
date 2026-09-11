@@ -53,7 +53,8 @@
 const CONFIG = {
   FORM_URL: 'https://docs.google.com/forms/d/e/1FAIpQLScawtTZ0P4OU-Y_K4m2lY2NNdT9KauI-8WrSqtxIynF7o5k9w/viewform',
   ENTRY_TYPE: '',   // 例 'entry.1234567890'  ← 「夫のタイプ診断の結果」（選択式）
-  ENTRY_MEMO: ''    // 例 'entry.0987654321'  ← 「診断メモ」（短文）
+  ENTRY_MEMO: '',   // 例 'entry.0987654321'  ← 「診断メモ」（短文）
+  GAS_URL: ''       // 回答をスプシに蓄積するGASウェブアプリのURL（gas/shindan_logger.gs をデプロイして貼る）。空なら送信しない
 };
 
 /* ===== 型 ===== */
@@ -178,7 +179,7 @@ const CLOSING = {
 
 /* ===== 状態 ===== */
 const TOTAL = SCENES.length + 5; // 12 + Q13 + Q14 + S + Q15 + F
-const st = { step:-1, scene:new Array(SCENES.length).fill(null), q13:null, q14:null, s:new Set(), q15:null, f:'' };
+const st = { step:-1, scene:new Array(SCENES.length).fill(null), q13:null, q14:null, s:new Set(), q15:null, f:'', name:'', sent:false };
 const app = document.getElementById('app');
 
 function esc(s){ return String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -191,7 +192,7 @@ function renderIntro(){
   <div class="card">
     <h1>夫が不機嫌なとき、<br>何をしますか。</h1>
     <p>全部で16問、5分くらいです。<br>あなたの夫がどの型か、これまでの相談記録に基づいて診ます。</p>
-    <p class="sub">これは<strong>夫を診る</strong>診断です。あなたを診るものではありません。<br>答えは保存されません。結果はヒアリングシートに引き継げます。</p>
+    <p class="sub">これは<strong>夫を診る</strong>診断です。あなたを診るものではありません。<br>回答は相談の準備のために保存され、結果はヒアリングシートに引き継げます。</p>
     <button class="btn acc" onclick="go(0)">はじめる</button>
   </div>`;
 }
@@ -231,14 +232,48 @@ function toggleS(v,idx){
 }
 
 function renderFree(idx){
-  app.innerHTML = `<div class="card">${progress(idx)}<div class="qnum">最後 / 16（任意）</div>
-    <h2>夫の、いちばん困る一言か行動を、ひとつ。</h2>
-    <p class="sub">書かなくても大丈夫です。相談で最初に扱う材料になります（60字まで）。</p>
+  app.innerHTML = `<div class="card">${progress(idx)}<div class="qnum">最後 / 16</div>
+    <h2>お名前と、夫のいちばん困る一言。</h2>
+    <p class="sub">お名前は、申込時と同じものをお願いします（相談の準備に使います）。</p>
+    <input id="fname" type="text" maxlength="40" placeholder="お名前（申込時と同じ）" value="${esc(st.name)}" style="width:100%;border:1.5px solid var(--line);border-radius:12px;padding:12px;font-size:16px;font-family:inherit;margin-bottom:12px">
+    <p class="sub">困る一言か行動は、書かなくても大丈夫です。相談で最初に扱う材料になります（60字まで）。</p>
     <textarea id="ftext" maxlength="60" placeholder="例：「で？」と言われて話が終わる">${esc(st.f)}</textarea>
-    <div class="row"><button class="btn ghost" onclick="saveF();go(${idx-1})">戻る</button><button class="btn acc" onclick="saveF();showResult()">結果を見る</button></div></div>`;
+    <p class="small" id="ferr" style="color:var(--acc)"></p>
+    <div class="row"><button class="btn ghost" onclick="saveF();go(${idx-1})">戻る</button><button class="btn acc" onclick="finish()">結果を見る</button></div></div>`;
   window.scrollTo(0,0);
 }
-function saveF(){ const t=document.getElementById('ftext'); if(t) st.f=t.value.trim(); }
+function saveF(){ const t=document.getElementById('ftext'); if(t) st.f=t.value.trim(); const n=document.getElementById('fname'); if(n) st.name=n.value.trim(); }
+function finish(){
+  saveF();
+  if (!st.name){ const e=document.getElementById('ferr'); if(e) e.textContent='お名前を入れてください（申込時と同じもの）'; return; }
+  const r = judge(); sendLog(r); showResult(r);
+}
+
+/* ===== 回答をスプシに送る（GAS）。応答は読まない（no-cors）。失敗しても結果表示には影響しない ===== */
+function sendLog(r){
+  if (!CONFIG.GAS_URL || st.sent) return;
+  st.sent = true;
+  const label = (i,k) => { const sc=SCENES[i]; if(KEYS.includes(k)) return TYPES[k].name.replace('型','') + '｜' + sc[k]; if(k==='nokid') return '子どもはいない'; if(k==='na') return '分からない'; return ''; };
+  const payload = {
+    name: st.name,
+    main: r.undetermined ? '' : TYPES[r.main].name,
+    sub: r.sub ? TYPES[r.sub].name : '',
+    undetermined: r.undetermined,
+    safe: r.safe,
+    safety: QS.opts.filter(([v])=>st.s.has(v) && v!=='none').map(([,l])=>l),
+    mind: MIND[r.mind],
+    f: st.f,
+    score: r.score,
+    answers: SCENES.map((_,i)=>label(i, st.scene[i])),
+    q13: (Q13.opts.find(([v])=>v===st.q13)||['',''])[1],
+    q14: (Q14.opts.find(([v])=>v===st.q14)||['',''])[1],
+    resultUrl: location.origin + resultUrl(r),
+    ua: navigator.userAgent.slice(0,120)
+  };
+  try {
+    fetch(CONFIG.GAS_URL, { method:'POST', mode:'no-cors', keepalive:true, headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify(payload) });
+  } catch(e) {}
+}
 
 function go(step){
   if (step < 0) return renderIntro();
