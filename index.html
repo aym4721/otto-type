@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>夫のタイプ診断</title>
+<style>
+  :root{--bg:#faf7f2;--card:#fff;--ink:#2b2622;--sub:#6b625a;--line:#e6ded4;--acc:#b5404f;--acc2:#f3e3e5;--btn:#2b2622}
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP",Meiryo,sans-serif;line-height:1.75;font-size:16px}
+  .wrap{max-width:560px;margin:0 auto;padding:20px 16px 60px}
+  header{font-size:13px;color:var(--sub);letter-spacing:.08em;margin-bottom:8px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px 18px;margin-bottom:14px}
+  h1{font-size:22px;margin:0 0 12px;line-height:1.5}
+  h2{font-size:18px;margin:0 0 14px;line-height:1.6}
+  h3{font-size:15px;margin:22px 0 8px;color:var(--acc)}
+  p{margin:0 0 12px}
+  .sub{color:var(--sub);font-size:14px}
+  .prog{height:6px;background:var(--line);border-radius:3px;margin:6px 0 16px;overflow:hidden}
+  .prog i{display:block;height:100%;background:var(--acc);width:0;transition:width .2s}
+  .qnum{font-size:13px;color:var(--sub);margin-bottom:4px}
+  .opt{display:block;width:100%;text-align:left;background:#fff;border:1.5px solid var(--line);border-radius:12px;padding:13px 14px;margin:8px 0;font-size:15.5px;line-height:1.6;cursor:pointer;color:var(--ink)}
+  .opt:hover{border-color:#c9bdb0}
+  .opt.sel{border-color:var(--acc);background:var(--acc2)}
+  .opt.na{color:var(--sub);font-size:14px}
+  .btn{display:inline-block;width:100%;text-align:center;background:var(--btn);color:#fff;border:0;border-radius:12px;padding:14px;font-size:16px;font-weight:600;cursor:pointer;text-decoration:none;margin-top:10px}
+  .btn.acc{background:var(--acc)}
+  .btn.ghost{background:transparent;color:var(--sub);border:1px solid var(--line);font-weight:400;font-size:14px;padding:10px}
+  .btn[disabled]{opacity:.35;cursor:default}
+  .row{display:flex;gap:8px;margin-top:12px}
+  .row .btn{margin-top:0}
+  ul{padding-left:20px;margin:0 0 12px}
+  li{margin:4px 0}
+  textarea{width:100%;border:1.5px solid var(--line);border-radius:12px;padding:12px;font-size:15px;font-family:inherit;min-height:84px;resize:vertical}
+  .lead{font-size:20px;font-weight:700;line-height:1.5;margin:0 0 6px}
+  .typename{display:inline-block;background:var(--acc);color:#fff;border-radius:999px;padding:4px 14px;font-size:14px;font-weight:600;margin-bottom:10px}
+  .note{background:#f6f1ea;border-radius:10px;padding:12px 14px;font-size:14px;color:var(--sub)}
+  .copybox{background:#f6f1ea;border-radius:10px;padding:12px 14px;font-size:14px;word-break:break-all;margin:8px 0}
+  .small{font-size:13px;color:var(--sub)}
+  .hidden{display:none}
+  .common{border-left:3px solid var(--acc);padding-left:12px;color:var(--sub);font-size:14px;margin-bottom:16px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>夫のタイプ診断</header>
+  <div id="app"></div>
+</div>
+
+<script>
+/* ===== 設定（フォームに「診断結果」「診断メモ」の2問を追加したら entry ID を入れる。空なら「コピーして貼る」方式） ===== */
+const CONFIG = {
+  FORM_URL: 'https://docs.google.com/forms/d/e/1FAIpQLScawtTZ0P4OU-Y_K4m2lY2NNdT9KauI-8WrSqtxIynF7o5k9w/viewform',
+  ENTRY_TYPE: '',   // 例 'entry.1234567890'  ← 「夫のタイプ診断の結果」（選択式）
+  ENTRY_MEMO: ''    // 例 'entry.0987654321'  ← 「診断メモ」（短文）
+};
+
+/* ===== 型 ===== */
+const TYPES = {
+  kai:  { name:'貝型', head:'刺激すると閉じる。そっとすると開く。' },
+  chi:  { name:'でかいチワワ型', head:'吠えるのは、怖いから。' },
+  sho:  { name:'意地っ張り小学生型', head:'出て行くのは、拳を下ろせないから。' },
+  eiyo: { name:'栄養失調型', head:'動かないのは、栄養が切れているから。' }
+};
+const KEYS = ['kai','chi','sho','eiyo'];
+
+/* ===== 設問 Q1〜Q12（型の判定） ===== */
+const SCENES = [
+  { q:'夫が不機嫌になったとき、最初にすることは？', w:2,
+    kai:'黙る。部屋に行く。返事が「あー」「うん」になる',
+    chi:'声が大きくなる。こちらを責める。きつい一言が出る',
+    sho:'家を出る。外出する。「もう終わりにしたい」と言う',
+    eiyo:'特に変わらない。不機嫌というより、もともと無反応' },
+  { q:'あなたが話しかけたとき、返ってくるのは？', w:2,
+    kai:'一言で終わる。目を合わせない。聞こえないふり',
+    chi:'否定か正論。「で？」と詰められる',
+    sho:'「今その話する？」と席を立つ。話をそらして出ていく',
+    eiyo:'「うん」だけで聞いていない。上の空。めんどくさそう' },
+  { q:'LINEや連絡は？', w:1,
+    kai:'既読のまま返ってこない。来るのは用件だけ',
+    chi:'文面がきつい。長文の反論が来る',
+    sho:'返信がない時期がある。ブロック・着信拒否',
+    eiyo:'返ってはくるが淡々。業務連絡以上でも以下でもない' },
+  { q:'「話し合いたい」と切り出したとき、どうなる？', w:2,
+    kai:'過去のことを持ち出されて打ち切られる。「決めたことに意見はいらない」',
+    chi:'その場で怒る。声が大きくなる。こちらが謝って終わる',
+    sho:'「気持ちは変わらない」「もう無理」で切られる。その場を離れる',
+    eiyo:'「うん」「わかった」と言うが何も変わらない。話し合いにならず流れる' },
+  { q:'子どもとの関係は？', w:1, nokid:true,
+    kai:'子どもとは普通に話す。夫婦の会話だけがない',
+    chi:'子どもにも強く当たる。家の空気が夫の機嫌で決まる',
+    sho:'子どもより自分の予定を優先。家にいないことが多い',
+    eiyo:'子どもの世話は任せきり。関わらない' },
+  { q:'休日、夫は家でどう過ごす？', w:1,
+    kai:'家にいるけど別の部屋。スマホ。同じ空間にいない',
+    chi:'家にいて、あれこれ口を出す。機嫌で空気が変わる',
+    sho:'家にいない。趣味・付き合い・実家。帰る時間も言わない',
+    eiyo:'寝ている。ゴロゴロ。動画。誘っても「めんどくさい」' },
+  { q:'不機嫌や喧嘩のあと、どうやって元に戻る？', w:2,
+    kai:'何日か（何週間か）黙ったあと、何事もなかったように戻る',
+    chi:'こちらが謝るか、機嫌を取ると戻る',
+    sho:'戻らない。別居や「終わりにする」の話が残る',
+    eiyo:'そもそも喧嘩にならない。波がなく淡々' },
+  { q:'夫の「外」での様子は？', w:1,
+    kai:'外では愛想がいい。家では黙る',
+    chi:'外では我慢している分、家で爆発する',
+    sho:'外の方が生き生きしている。家より外に居場所がある',
+    eiyo:'仕事・体調・自信でつまずいてから、元気がない' },
+  { q:'生活費や進路など、決めないといけない話が出たとき', w:1,
+    kai:'返事がない。先延ばし。結局こちらが決める',
+    chi:'お金の話になると喧嘩になる。「俺も金がない」の一点張りで責められる',
+    sho:'「好きにしろ」「俺には関係ない」。家計を分けると言い出す',
+    eiyo:'決められない。「わからない」。任せきり' },
+  { q:'あなたが体調を崩したり、大変なとき、夫は？', w:1,
+    kai:'何も言わない。気づかないふり',
+    chi:'「俺もしんどい」と返す。家事が止まると不機嫌になる',
+    sho:'実家に帰る。外に出る。距離を取る',
+    eiyo:'心配はするが動けない。頼りにならない' },
+  { q:'夫の方から話しかけてくることは？', w:1,
+    kai:'ほぼない。用があれば子ども経由かLINE',
+    chi:'ある。でも注意・指摘・不満の形で',
+    sho:'自分の予定や決めたことの報告だけ',
+    eiyo:'たまにある。天気やテレビの話くらいで続かない' },
+  { q:'二人で出かけよう（外食・旅行）と誘うと？', w:1,
+    kai:'「行けば」と自分は来ない。二人きりを避ける',
+    chi:'来るが文句が多い。段取りに口を出す',
+    sho:'自分の予定を優先して断る。友達との予定はある',
+    eiyo:'「めんどくさい」「疲れてる」で断る' }
+];
+const Q13 = { q:'この1ヶ月で、いちばん多かったのは？', opts:[
+  ['kai','黙る・無視'],['chi','怒る・責める'],['sho','出て行く・離婚や別居の話'],['eiyo','何も起きない・無反応']] };
+const Q14 = { q:'不機嫌の出方に、パターンはある？', opts:[
+  ['mix','黙る→怒る→黙る、を繰り返す'],['kai','黙ったまま長い（週〜月単位）'],['chi','怒ってもその日か翌日には戻る'],['sho','出て行っては戻る、を繰り返す'],['eiyo','波がない。ずっと同じ']] };
+const QS = { q:'夫が怒ったとき、次のことはありますか？（あてはまるもの全部）', opts:[
+  ['s1','物を投げる'],['s2','壁や物を叩く'],['s3','体に触れる・押す・叩く'],['s4','「出ていけ」と言う・鍵をかける'],['s5','生活費やお金を止める'],['none','どれもない']] };
+const Q15 = { q:'今の気持ちに近いのは？（結果には影響しません）', opts:[
+  ['kaizen','関係改善したい'],['rikon','離婚したい'],['shiya','離婚も視野に考えている'],['wakaranai','わからない']] };
+const MIND = { kaizen:'関係改善したい', rikon:'離婚したい', shiya:'離婚も視野に考えている', wakaranai:'わからない' };
+
+/* ===== 結果画面の本文 ===== */
+const RESULT = {
+  kai: {
+    list:['話しかけても「あー」「うん」で終わる','LINEは既読か未読のまま。来るのは用件だけ','部屋にこもる。休みの日は一人で出かける','話し合いを持ちかけると、過去を持ち出されて打ち切られる','子どものことは話すのに、夫婦のことになると口が閉じる'],
+    inside:'貝です。<br>突けば閉じるし、こじ開けようとすれば、もっと固く閉じます。<br>無視しているように見えて、本人は「ここを開けたら負ける」と思っている場所を閉じているだけなんです。<br>自信がない場所で黙る。混乱して言葉にならない。拗ねている。<br>記録上、貝型の中身はだいたいこの3つのどれかです。',
+    habit:'「ちゃんと話し合おう」と場を作ること。<br>貝にとっては、こじ開けに来られた合図なので、閉じます。<br>長文のLINEも同じです。「読む前から責められた気持ちになる」と言った夫が、実際にいます。',
+    cases:'貝型は、4つの中でいちばん早く変化が出る型です。<br>そっとする条件が分かると、セッション1回目のあとに「一言以上返ってくるようになった」人が複数います。',
+    manual:'いつ開くのか。どの一言で閉じるのか。閉じたときに、どう戻すか。<br>これはあなたの夫の個体差なので、診断では出ません。<br>個別相談で、あなたの夫専用の取扱説明書を一緒に作ります。'
+  },
+  chi: {
+    list:['話の冒頭から怒る。声が大きくなる','こちらの失敗を、解決より先に責める','不機嫌な顔で黙り込んで、結局こちらが謝る流れになる','LINEの文面がきつい。一言で切ってくる','家の空気が、夫の機嫌で決まる'],
+    inside:'でかいチワワです。<br>弱い犬ほど吠えます。図体は大きいのに、中身はビビりです。<br>吠えているのは、怖いから。<br>予測できないこと、自分の立場が揺れること、負けそうなこと。<br>それを守るために吠えるので、あなたが正しければ正しいほど、吠える量が増えるんです。<br>記録では、「怯えているから吠えている」と読み替えた瞬間に、妻側の怖さが減った人が複数います。',
+    habit:'その場を収めようとすること。<br>正しいことを言って黙らせるか、とりあえず謝って終わらせるか。<br>どちらも、吠えている犬に正面から手を出している状態なので、次に吠えるまでが早くなります。<br>「とりあえず謝る」で20年収めてきて、限界が来た人が実際にいます。',
+    cases:'10年続いた強い言葉。1ヶ月会話ゼロ。寄り添うと拒絶。<br>「夫は宇宙人じゃなくて、ビビりで愛情深い保護犬」という見立てから4ヶ月で、夫の方から「残ってる卵、茹でといて」。失敗しても「あ〜いいよいいよ」。<br>本人いわく「うちは実はよく会話する、仲のいい夫婦だった」。（掲載名「海」さん）',
+    manual:'何に怯えて吠えているのか。吠えているときに、何をしないか。吠え終わりのサイン。<br>あなたの夫の個体差なので、相談で一緒に作ります。'
+  },
+  sho: {
+    list:['突然「離婚したい」「終わりにしたい」と言われた','別居、家出、LINEブロック。連絡が取れない','何を言っても「気持ちは変わらない」で切られる','単身赴任先から「帰りたくない」','趣味、飲み、付き合い。家より外を優先する'],
+    inside:'好きな子に好きと言えなくて、意地悪をする小学生です。<br>一度振り上げた拳を、下ろす場所がなくて、出て行っています。<br>記録では「離婚したいのではなく、余裕がない」だった夫が複数います。<br>ブロックされていても、既読がつかなくても、夫の頭の中ではあなたとの会話が続いています。',
+    habit:'追いかけること。<br>確認する。問い詰める。気持ちを長文で伝える。<br>追いかけるほど、拳を下ろす場所がなくなります。<br>小学生は、追いかけられると逃げ足が速くなるんです。',
+    cases:'夫が別居と転居を考えていたところから、半年で「トゲがない」と言われる関係に戻った人がいます。<br>一方で、戻らない方向に落ち着いて、自分の人生を決めた人もいます。<br>この型は、どちらに転んでも損をしない組み立てにします。',
+    manual:'追いかけずに、拳を下ろす場所をどう作るか。連絡が取れない状態で、何ができるか。<br>出て行った夫は、もともと貝型かでかいチワワ型だったことがほとんどなので、相談ではそちらも一緒に見ます。'
+  },
+  eiyo: {
+    list:['不機嫌ではない。でも何も返ってこない。上の空','レス。「年だから」で終わる','大事な場面で頼りにならない。決めない、動かない','仕事や体調でつまずいてから、部屋で動画ばかり','誘っても「めんどくさい」。子どものことも任せきり'],
+    inside:'栄養失調です。<br>出すものが、残っていない状態です。拒絶に見えるのは、そのせいなんです。<br>男性は、身近な女性からの安心と信頼を栄養にして外で戦います。<br>それが切れると、外見は変わらないまま、中身が繊細な乙女になります。<br>欲しいものがないわけじゃなくて、欲求がホタルの光くらい弱くて、本人にも見えていないんです。',
+    habit:'先回りして、全部やること。<br>夫が動かないから私がやる。すると夫は、もっと動かなくなります。<br>シーソーと同じで、あなたが上がった分だけ、夫は下がります。',
+    cases:'先回りをやめたら、夫が自分で動き出して「激楽」になった人がいます。<br>妻が頑張る係を降りたら、夫の方からコーヒーを頼めるようになった、という記録もあります。<br>派手さはないですが、この型は「妻がやめる」だけで動く分、いちばん省エネで変わります。',
+    manual:'何を先回りしてきたか。どこから降りるか。栄養として、何を戻すか。<br>栄養の種類は夫によって違います。感謝が効く人、放っておくのが効く人、逆のこともあります。<br>だから、相談で一緒に見ます。'
+  }
+};
+const CLOSING = {
+  kaizen:'取扱説明書ができると、最初の一手が決まります。相談でそこまで作ります。',
+  rikon:'決めるのは、取扱説明書を見てからでも遅くないです。どちらに転んでも損をしない形にします。',
+  shiya:'続けるか離れるかより先に、夫がどういう状態かを一度見ておくと、決めやすくなります。',
+  wakaranai:'分からないのは、材料が足りないだけです。相談で材料を揃えます。'
+};
+
+/* ===== 状態 ===== */
+const TOTAL = SCENES.length + 5; // 12 + Q13 + Q14 + S + Q15 + F
+const st = { step:-1, scene:new Array(SCENES.length).fill(null), q13:null, q14:null, s:new Set(), q15:null, f:'' };
+const app = document.getElementById('app');
+
+function esc(s){ return String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function progress(n){ return `<div class="prog"><i style="width:${Math.round(n/TOTAL*100)}%"></i></div>`; }
+function rotate(arr, k){ return arr.slice(k%arr.length).concat(arr.slice(0,k%arr.length)); }
+
+/* ===== 画面 ===== */
+function renderIntro(){
+  app.innerHTML = `
+  <div class="card">
+    <h1>夫が不機嫌なとき、<br>何をしますか。</h1>
+    <p>全部で16問、5分くらいです。<br>あなたの夫がどの型か、これまでの相談記録に基づいて診ます。</p>
+    <p class="sub">これは<strong>夫を診る</strong>診断です。あなたを診るものではありません。<br>答えは保存されません。結果はヒアリングシートに引き継げます。</p>
+    <button class="btn acc" onclick="go(0)">はじめる</button>
+  </div>`;
+}
+
+function renderScene(i){
+  const sc = SCENES[i];
+  const order = rotate(KEYS, i);
+  const cur = st.scene[i];
+  let html = `<div class="card">${progress(i)}<div class="qnum">Q${i+1} / 16</div><h2>${esc(sc.q)}</h2>`;
+  order.forEach(k => { html += `<button class="opt ${cur===k?'sel':''}" onclick="pickScene(${i},'${k}')">${esc(sc[k])}</button>`; });
+  if (sc.nokid) html += `<button class="opt na ${cur==='nokid'?'sel':''}" onclick="pickScene(${i},'nokid')">子どもはいない</button>`;
+  html += `<button class="opt na ${cur==='na'?'sel':''}" onclick="pickScene(${i},'na')">この場面はない／分からない</button>`;
+  html += `<div class="row"><button class="btn ghost" onclick="go(${i-1})">戻る</button></div></div>`;
+  app.innerHTML = html; window.scrollTo(0,0);
+}
+function pickScene(i,k){ st.scene[i]=k; setTimeout(()=>go(i+1),120); }
+
+function renderSingle(idx, def, key){
+  const cur = st[key];
+  let html = `<div class="card">${progress(idx)}<div class="qnum">Q${idx+1} / 16</div><h2>${esc(def.q)}</h2>`;
+  def.opts.forEach(([v,label]) => { html += `<button class="opt ${cur===v?'sel':''}" onclick="pickSingle('${key}','${v}',${idx})">${esc(label)}</button>`; });
+  html += `<div class="row"><button class="btn ghost" onclick="go(${idx-1})">戻る</button></div></div>`;
+  app.innerHTML = html; window.scrollTo(0,0);
+}
+function pickSingle(key,v,idx){ st[key]=v; setTimeout(()=>go(idx+1),120); }
+
+function renderSafety(idx){
+  let html = `<div class="card">${progress(idx)}<div class="qnum">Q${idx+1} / 16</div><h2>${esc(QS.q)}</h2>`;
+  QS.opts.forEach(([v,label]) => { html += `<button class="opt ${st.s.has(v)?'sel':''}" onclick="toggleS('${v}',${idx})">${esc(label)}</button>`; });
+  html += `<div class="row"><button class="btn ghost" onclick="go(${idx-1})">戻る</button><button class="btn" ${st.s.size?'':'disabled'} onclick="go(${idx+1})">次へ</button></div></div>`;
+  app.innerHTML = html; window.scrollTo(0,0);
+}
+function toggleS(v,idx){
+  if (v==='none'){ st.s.clear(); st.s.add('none'); }
+  else { st.s.delete('none'); st.s.has(v)?st.s.delete(v):st.s.add(v); }
+  renderSafety(idx);
+}
+
+function renderFree(idx){
+  app.innerHTML = `<div class="card">${progress(idx)}<div class="qnum">最後 / 16（任意）</div>
+    <h2>夫の、いちばん困る一言か行動を、ひとつ。</h2>
+    <p class="sub">書かなくても大丈夫です。相談で最初に扱う材料になります（60字まで）。</p>
+    <textarea id="ftext" maxlength="60" placeholder="例：「で？」と言われて話が終わる">${esc(st.f)}</textarea>
+    <div class="row"><button class="btn ghost" onclick="saveF();go(${idx-1})">戻る</button><button class="btn acc" onclick="saveF();showResult()">結果を見る</button></div></div>`;
+  window.scrollTo(0,0);
+}
+function saveF(){ const t=document.getElementById('ftext'); if(t) st.f=t.value.trim(); }
+
+function go(step){
+  if (step < 0) return renderIntro();
+  st.step = step;
+  if (step < SCENES.length) return renderScene(step);
+  const j = step - SCENES.length;
+  if (j===0) return renderSingle(step, Q13, 'q13');
+  if (j===1) return renderSingle(step, Q14, 'q14');
+  if (j===2) return renderSafety(step);
+  if (j===3) return renderSingle(step, Q15, 'q15');
+  if (j===4) return renderFree(step);
+  showResult();
+}
+
+/* ===== 採点 ===== */
+function judge(){
+  const score = {kai:0,chi:0,sho:0,eiyo:0}; let unknown=0;
+  SCENES.forEach((sc,i)=>{ const a=st.scene[i]; if(KEYS.includes(a)) score[a]+=sc.w; else if(a==='na'||a===null) unknown++; });
+  if (st.q13 && KEYS.includes(st.q13)) score[st.q13]+=2;
+  let mixed=false;
+  if (st.q14==='mix') mixed=true; else if (st.q14 && KEYS.includes(st.q14)) score[st.q14]+=1;
+  const max = Math.max(...KEYS.map(k=>score[k]));
+  let tops = KEYS.filter(k=>score[k]===max);
+  let main = tops[0];
+  if (tops.length>1){
+    if (tops.includes(st.q13)) main=st.q13;
+    else if (tops.includes(st.scene[0])) main=st.scene[0];
+  }
+  const rest = KEYS.filter(k=>k!==main).sort((a,b)=>score[b]-score[a]);
+  let sub = (score[rest[0]]>0 && score[rest[0]] >= max*0.5) ? rest[0] : null;
+  if (mixed && (main==='kai'||main==='chi')) sub = main==='kai'?'chi':'kai';
+  if (main==='sho'){ const c = score.kai>=score.chi?'kai':'chi'; sub = (score[c]>0)?c:null; }
+  const undetermined = unknown>=7 || max<=5;
+  const safe = ['s1','s2','s3'].some(x=>st.s.has(x));
+  return { score, main, sub, mixed, undetermined, safe, mind: st.q15||'wakaranai', f: st.f };
+}
+
+/* ===== 結果 ===== */
+function memoText(r){
+  const parts=[];
+  parts.push('副: ' + (r.sub?TYPES[r.sub].name:'なし'));
+  parts.push('怒ったときの行動チェック: ' + (r.safe?'あり':'なし'));
+  parts.push('気持ち: ' + MIND[r.mind]);
+  if (r.f) parts.push('困る一言: ' + r.f);
+  return parts.join('／');
+}
+function formLink(r){
+  const typeName = r.undetermined ? '型が絞れなかった' : TYPES[r.main].name;
+  if (CONFIG.ENTRY_TYPE && CONFIG.ENTRY_MEMO){
+    return CONFIG.FORM_URL + '?usp=pp_url&' + CONFIG.ENTRY_TYPE + '=' + encodeURIComponent(typeName) + '&' + CONFIG.ENTRY_MEMO + '=' + encodeURIComponent(memoText(r));
+  }
+  return CONFIG.FORM_URL + '?usp=header';
+}
+function resultUrl(r){
+  const p = new URLSearchParams();
+  p.set('t', r.undetermined?'none':r.main); if(r.sub) p.set('s', r.sub); if(r.safe) p.set('safe','1'); p.set('mind', r.mind);
+  return location.pathname + '?' + p.toString();
+}
+function copyText(r){
+  const typeName = r.undetermined ? '型が絞れなかった' : TYPES[r.main].name;
+  return '【夫のタイプ診断】' + typeName + '／' + memoText(r);
+}
+
+function showResult(r){
+  r = r || judge();
+  const prefilled = !!(CONFIG.ENTRY_TYPE && CONFIG.ENTRY_MEMO);
+  const ctaBlock = `
+    <div class="card">
+      <h2>次に、ヒアリングシートへ</h2>
+      <p>取扱説明書は、相談で一緒に作ります。<br>そのために、今の状況をヒアリングシートに書いてください（10分くらい）。</p>
+      ${prefilled
+        ? `<p class="sub">診断の結果は、シートに自動で入ります。</p>`
+        : `<p class="sub">シートの「相談したいこと」欄の先頭に、この一行を貼ってください。</p>
+           <div class="copybox" id="copybox">${esc(copyText(r))}</div>
+           <button class="btn ghost" onclick="doCopy()">この一行をコピー</button>`}
+      <a class="btn acc" href="${formLink(r)}" target="_blank" rel="noopener">ヒアリングシートを開く</a>
+      <p class="small" style="margin-top:12px">フォームの「送信しました」の画面が出たら終了です。当日お会いしましょう。</p>
+    </div>`;
+
+  if (r.undetermined){
+    app.innerHTML = `
+      <div class="card">
+        <div class="typename">診断結果</div>
+        <p class="lead">型が、絞れませんでした。</p>
+        <p>「この場面はない／分からない」が多かったか、夫の反応が場面ごとにばらけています。<br>それ自体が情報なので、相談で直接診ます。</p>
+        <p class="sub">${esc(CLOSING[r.mind])}</p>
+      </div>${ctaBlock}
+      <p class="small"><a href="${resultUrl(r)}">この結果のURL</a>（あとで見返せます）</p>`;
+    window.scrollTo(0,0); return;
+  }
+
+  const T = TYPES[r.main], R = RESULT[r.main];
+  let notes = '';
+  if ((r.main==='kai'||r.main==='chi') && r.sub && (r.sub==='kai'||r.sub==='chi'))
+    notes += `<div class="note">※「黙る→怒る→黙る」を繰り返している場合は、貝型とでかいチワワ型が交互に出ています。あなたの夫は<strong>${esc(TYPES[r.sub].name)}</strong>の面も強く出ています。相談では両方を見ます。</div>`;
+  else if (r.main==='sho' && r.sub)
+    notes += `<div class="note">※出て行く前の夫は、<strong>${esc(TYPES[r.sub].name)}</strong>の面が強かったようです。相談ではそちらも一緒に見ます。</div>`;
+  else if (r.sub)
+    notes += `<div class="note">※<strong>${esc(TYPES[r.sub].name)}</strong>の面も出ています。相談では両方を見ます。</div>`;
+
+  app.innerHTML = `
+    <div class="card">
+      <div class="typename">診断結果</div>
+      <p class="lead">あなたの夫は「${esc(T.name)}」</p>
+      <p style="font-weight:600">${esc(T.head)}</p>
+      <div class="common">どの型にも共通で、ひとつだけ。<br>夫は、あなたを攻撃していません。何かから、自分を守っています。<br>診断で分かるのは「何から守っているか」まで。「どう扱うか」は、あなたの夫の個体差なので、相談で一緒に作ります。</div>
+      <h3>こんな夫ですよね</h3>
+      <ul>${R.list.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>
+      <h3>夫の中で起きていること</h3>
+      <p>${R.inside}</p>
+      <h3>あなたがたぶん今やっていること</h3>
+      <p>${R.habit}</p>
+      <h3>同じ型で起きたこと</h3>
+      <p>${R.cases}</p>
+      <h3>取扱説明書は、相談で一緒に作ります</h3>
+      <p>${R.manual}</p>
+      <p class="sub">${esc(CLOSING[r.mind])}</p>
+      ${notes}
+    </div>
+    ${ctaBlock}
+    <p class="small"><a href="${resultUrl(r)}">この結果のURL</a>（あとで見返せます）</p>`;
+  window.scrollTo(0,0);
+}
+function doCopy(){
+  const t = document.getElementById('copybox').textContent;
+  if (navigator.clipboard) navigator.clipboard.writeText(t).then(()=>alert('コピーしました'));
+  else { const ta=document.createElement('textarea'); ta.value=t; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); alert('コピーしました'); }
+}
+
+/* ===== 起動（URLに結果があれば再表示） ===== */
+(function init(){
+  const p = new URLSearchParams(location.search);
+  const t = p.get('t');
+  if (t && (KEYS.includes(t) || t==='none')){
+    const s = p.get('s');
+    showResult({ main: t==='none'?'kai':t, sub: KEYS.includes(s)?s:null, mixed:false, undetermined: t==='none', safe: p.get('safe')==='1', mind: MIND[p.get('mind')]?p.get('mind'):'wakaranai', f:'' });
+  } else renderIntro();
+})();
+</script>
+</body>
+</html>
