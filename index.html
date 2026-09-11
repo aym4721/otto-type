@@ -49,12 +49,17 @@
 </div>
 
 <script>
-/* ===== 設定（フォームに「診断結果」「診断メモ」の2問を追加したら entry ID を入れる。空なら「コピーして貼る」方式） ===== */
+/* ===== 設定 =====
+   FORM_URL   : 診断専用のヒアリングシート（2026-09-11 作成版）。結果ボタンで事前入力済みで開く
+   ENTRY_NAME : 「お名前」欄。アプリで入れた名前を事前入力（本人が直せる）
+   ENTRY_DIAG : 「夫のタイプ診断をした方はこちらに回答」欄（段落）。診断結果＋全回答の記録を入れる
+   ※フォームの質問を増減すると entry ID が変わる。変えたら viewform のソースから取り直す
+   GAS_URL    : 使わない場合は空のまま（gas/shindan_logger.gs を配備したときだけ入れる） */
 const CONFIG = {
-  FORM_URL: 'https://docs.google.com/forms/d/e/1FAIpQLScawtTZ0P4OU-Y_K4m2lY2NNdT9KauI-8WrSqtxIynF7o5k9w/viewform',
-  ENTRY_TYPE: '',   // 例 'entry.1234567890'  ← 「夫のタイプ診断の結果」（選択式）
-  ENTRY_MEMO: '',   // 例 'entry.0987654321'  ← 「診断メモ」（短文）
-  GAS_URL: ''       // 回答をスプシに蓄積するGASウェブアプリのURL（gas/shindan_logger.gs をデプロイして貼る）。空なら送信しない
+  FORM_URL: 'https://docs.google.com/forms/d/e/1FAIpQLSdhRVs0Yvqe2EsTAasAJxme5eoBN67foyzsBKK7tc7YZ3cyKw/viewform',
+  ENTRY_NAME: 'entry.775987393',
+  ENTRY_DIAG: 'entry.107700203',
+  GAS_URL: ''
 };
 
 /* ===== 型 ===== */
@@ -192,7 +197,7 @@ function renderIntro(){
   <div class="card">
     <h1>夫が不機嫌なとき、<br>何をしますか。</h1>
     <p>全部で16問、5分くらいです。<br>あなたの夫がどの型か、これまでの相談記録に基づいて診ます。</p>
-    <p class="sub">これは<strong>夫を診る</strong>診断です。あなたを診るものではありません。<br>回答は相談の準備のために保存され、結果はヒアリングシートに引き継げます。</p>
+    <p class="sub">これは<strong>夫を診る</strong>診断です。あなたを診るものではありません。<br>結果と回答は、そのままヒアリングシートに引き継がれます。</p>
     <button class="btn acc" onclick="go(0)">はじめる</button>
   </div>`;
 }
@@ -234,7 +239,7 @@ function toggleS(v,idx){
 function renderFree(idx){
   app.innerHTML = `<div class="card">${progress(idx)}<div class="qnum">最後 / 16</div>
     <h2>お名前と、夫のいちばん困る一言。</h2>
-    <p class="sub">お名前は、申込時と同じものをお願いします（相談の準備に使います）。</p>
+    <p class="sub">お名前を入れておくと、このあとのヒアリングシートに自動で入ります（申込時と同じものを）。</p>
     <input id="fname" type="text" maxlength="40" placeholder="お名前（申込時と同じ）" value="${esc(st.name)}" style="width:100%;border:1.5px solid var(--line);border-radius:12px;padding:12px;font-size:16px;font-family:inherit;margin-bottom:12px">
     <p class="sub">困る一言か行動は、書かなくても大丈夫です。相談で最初に扱う材料になります（60字まで）。</p>
     <textarea id="ftext" maxlength="60" placeholder="例：「で？」と言われて話が終わる">${esc(st.f)}</textarea>
@@ -245,7 +250,6 @@ function renderFree(idx){
 function saveF(){ const t=document.getElementById('ftext'); if(t) st.f=t.value.trim(); const n=document.getElementById('fname'); if(n) st.name=n.value.trim(); }
 function finish(){
   saveF();
-  if (!st.name){ const e=document.getElementById('ferr'); if(e) e.textContent='お名前を入れてください（申込時と同じもの）'; return; }
   const r = judge(); sendLog(r); showResult(r);
 }
 
@@ -320,10 +324,37 @@ function memoText(r){
   if (r.f) parts.push('困る一言: ' + r.f);
   return parts.join('／');
 }
-function formLink(r){
+const QLABEL = ['不機嫌の最初','話しかけた返事','LINE','話し合い','子ども','休日','戻り方','外での様子','決め事','大変なとき','夫から話す','誘うと'];
+function answerLabel(i,k){
+  const sc=SCENES[i];
+  if (KEYS.includes(k)) return TYPES[k].name.replace('型','') + '｜' + sc[k];
+  if (k==='nokid') return '子どもはいない';
+  if (k==='na') return '分からない';
+  return '';
+}
+/* ヒアリングシートの「夫のタイプ診断」欄に入れる全文（結果＋回答の記録） */
+function diagText(r){
   const typeName = r.undetermined ? '型が絞れなかった' : TYPES[r.main].name;
-  if (CONFIG.ENTRY_TYPE && CONFIG.ENTRY_MEMO){
-    return CONFIG.FORM_URL + '?usp=pp_url&' + CONFIG.ENTRY_TYPE + '=' + encodeURIComponent(typeName) + '&' + CONFIG.ENTRY_MEMO + '=' + encodeURIComponent(memoText(r));
+  const L = [];
+  L.push('【夫のタイプ診断】' + typeName + (r.sub ? '（副: ' + TYPES[r.sub].name + '）' : ''));
+  L.push('気持ち: ' + MIND[r.mind]);
+  const sList = QS.opts.filter(([v])=>st.s.has(v) && v!=='none').map(([,l])=>l);
+  L.push('怒ったときの行動チェック: ' + (sList.length ? sList.join('、') : 'なし'));
+  if (r.f) L.push('困る一言: ' + r.f);
+  if (r.fromUrl) return L.join('\n');
+  L.push('--- 回答の記録（自動入力） ---');
+  SCENES.forEach((_,i)=>{ const a=answerLabel(i, st.scene[i]); if(a) L.push('Q'+(i+1)+' '+QLABEL[i]+': '+a); });
+  const q13=(Q13.opts.find(([v])=>v===st.q13)||['',''])[1]; if(q13) L.push('Q13 この1ヶ月: '+q13);
+  const q14=(Q14.opts.find(([v])=>v===st.q14)||['',''])[1]; if(q14) L.push('Q14 パターン: '+q14);
+  L.push('点数: 貝'+r.score.kai+' チワワ'+r.score.chi+' 小学生'+r.score.sho+' 栄養失調'+r.score.eiyo);
+  return L.join('\n');
+}
+function prefillReady(){ return !!(CONFIG.ENTRY_DIAG); }
+function formLink(r){
+  if (prefillReady()){
+    let u = CONFIG.FORM_URL + '?usp=pp_url&' + CONFIG.ENTRY_DIAG + '=' + encodeURIComponent(diagText(r));
+    if (CONFIG.ENTRY_NAME && st.name) u += '&' + CONFIG.ENTRY_NAME + '=' + encodeURIComponent(st.name);
+    return u;
   }
   return CONFIG.FORM_URL + '?usp=header';
 }
@@ -339,13 +370,13 @@ function copyText(r){
 
 function showResult(r){
   r = r || judge();
-  const prefilled = !!(CONFIG.ENTRY_TYPE && CONFIG.ENTRY_MEMO);
+  const prefilled = prefillReady();
   const ctaBlock = `
     <div class="card">
       <h2>次に、ヒアリングシートへ</h2>
       <p>取扱説明書は、相談で一緒に作ります。<br>そのために、今の状況をヒアリングシートに書いてください（10分くらい）。</p>
       ${prefilled
-        ? `<p class="sub">診断の結果は、シートに自動で入ります。</p>`
+        ? `<p class="sub">診断の結果と回答は、シートの「夫のタイプ診断」欄に自動で入っています。そのままで大丈夫です。${st.name?'お名前も入っています（違っていたら直してください）。':''}</p>`
         : `<p class="sub">シートの「相談したいこと」欄の先頭に、この一行を貼ってください。</p>
            <div class="copybox" id="copybox">${esc(copyText(r))}</div>
            <button class="btn ghost" onclick="doCopy()">この一行をコピー</button>`}
@@ -409,7 +440,7 @@ function doCopy(){
   const t = p.get('t');
   if (t && (KEYS.includes(t) || t==='none')){
     const s = p.get('s');
-    showResult({ main: t==='none'?'kai':t, sub: KEYS.includes(s)?s:null, mixed:false, undetermined: t==='none', safe: p.get('safe')==='1', mind: MIND[p.get('mind')]?p.get('mind'):'wakaranai', f:'' });
+    showResult({ main: t==='none'?'kai':t, sub: KEYS.includes(s)?s:null, mixed:false, undetermined: t==='none', safe: p.get('safe')==='1', mind: MIND[p.get('mind')]?p.get('mind'):'wakaranai', f:'', score:{kai:0,chi:0,sho:0,eiyo:0}, fromUrl:true });
   } else renderIntro();
 })();
 </script>
