@@ -19,7 +19,7 @@
 const SPREADSHEET_ID = '1VYpivGlAL2qDK7Au3oR10l5NPytZCJclWdfEBX9gzBE'; // フォーム回答スプシ
 const LOG_SPREADSHEET_ID = '';        // 診断の回答を別スプシに溜めたいときだけID。空なら同じスプシの新タブ
 const LOG_TAB = '夫タイプ診断';         // 診断の回答が溜まるタブ
-const HEARING_TAB = 'フォームの回答 2'; // ★専用ヒアリングシートの回答タブ名に合わせる
+const HEARING_TAB = 'PS個別アプリあり'; // 専用ヒアリングシートの回答タブ名（2026-09-12 確認済み。タブ名を変えたらここも変える）
 const LINK_COL_TITLE = '診断（自動照合）'; // ヒアリングシート側に足す列の見出し（無ければ末尾に自動作成）
 
 const HEADER = [
@@ -43,6 +43,15 @@ function normName_(s) {
 function logSheet_() {
   const ss = SpreadsheetApp.openById(LOG_SPREADSHEET_ID || SPREADSHEET_ID);
   let sh = ss.getSheetByName(LOG_TAB);
+  // 旧版（v1: メール列なし）の見出しのタブが残っていたら退避して作り直す（列ズレ防止）
+  if (sh && sh.getLastRow() > 0) {
+    const h = sh.getRange(1, 1, 1, 4).getValues()[0];
+    if (h[2] !== 'メール' || h[3] !== '照合') {
+      let n = 1; while (ss.getSheetByName(LOG_TAB + '_v1_' + n)) n++;
+      sh.setName(LOG_TAB + '_v1_' + n);
+      sh = null;
+    }
+  }
   if (!sh) sh = ss.insertSheet(LOG_TAB);
   if (sh.getLastRow() === 0) { sh.appendRow(HEADER); sh.setFrozenRows(1); }
   return sh;
