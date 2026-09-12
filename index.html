@@ -184,7 +184,7 @@ const CLOSING = {
 
 /* ===== 状態 ===== */
 const TOTAL = SCENES.length + 5; // 12 + Q13 + Q14 + S + Q15 + F
-const st = { step:-1, scene:new Array(SCENES.length).fill(null), q13:null, q14:null, s:new Set(), q15:null, f:'', name:'', sent:false };
+const st = { step:-1, scene:new Array(SCENES.length).fill(null), q13:null, q14:null, s:new Set(), q15:null, f:'', name:'', email:'', sent:false };
 const app = document.getElementById('app');
 
 function esc(s){ return String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -238,18 +238,22 @@ function toggleS(v,idx){
 
 function renderFree(idx){
   app.innerHTML = `<div class="card">${progress(idx)}<div class="qnum">最後 / 16</div>
-    <h2>お名前と、夫のいちばん困る一言。</h2>
-    <p class="sub">お名前を入れておくと、このあとのヒアリングシートに自動で入ります（申込時と同じものを）。</p>
-    <input id="fname" type="text" maxlength="40" placeholder="お名前（申込時と同じ）" value="${esc(st.name)}" style="width:100%;border:1.5px solid var(--line);border-radius:12px;padding:12px;font-size:16px;font-family:inherit;margin-bottom:12px">
+    <h2>お名前とメールアドレス、夫のいちばん困る一言。</h2>
+    <p class="sub">申込時と同じものをお願いします。診断の結果をヒアリングシートと結びつけるのに使います。</p>
+    <input id="fname" type="text" maxlength="40" placeholder="お名前（申込時と同じ）" value="${esc(st.name)}" style="width:100%;border:1.5px solid var(--line);border-radius:12px;padding:12px;font-size:16px;font-family:inherit;margin-bottom:10px">
+    <input id="femail" type="email" maxlength="80" placeholder="メールアドレス（申込時と同じ）" value="${esc(st.email)}" autocomplete="email" style="width:100%;border:1.5px solid var(--line);border-radius:12px;padding:12px;font-size:16px;font-family:inherit;margin-bottom:12px">
     <p class="sub">困る一言か行動は、書かなくても大丈夫です。相談で最初に扱う材料になります（60字まで）。</p>
     <textarea id="ftext" maxlength="60" placeholder="例：「で？」と言われて話が終わる">${esc(st.f)}</textarea>
     <p class="small" id="ferr" style="color:var(--acc)"></p>
     <div class="row"><button class="btn ghost" onclick="saveF();go(${idx-1})">戻る</button><button class="btn acc" onclick="finish()">結果を見る</button></div></div>`;
   window.scrollTo(0,0);
 }
-function saveF(){ const t=document.getElementById('ftext'); if(t) st.f=t.value.trim(); const n=document.getElementById('fname'); if(n) st.name=n.value.trim(); }
+function saveF(){ const t=document.getElementById('ftext'); if(t) st.f=t.value.trim(); const n=document.getElementById('fname'); if(n) st.name=n.value.trim(); const m=document.getElementById('femail'); if(m) st.email=m.value.trim(); }
 function finish(){
   saveF();
+  const e=document.getElementById('ferr');
+  if (!st.name){ if(e) e.textContent='お名前を入れてください（申込時と同じもの）'; return; }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(st.email)){ if(e) e.textContent='メールアドレスを確認してください（申込時と同じもの）'; return; }
   const r = judge(); sendLog(r); showResult(r);
 }
 
@@ -260,6 +264,7 @@ function sendLog(r){
   const label = (i,k) => { const sc=SCENES[i]; if(KEYS.includes(k)) return TYPES[k].name.replace('型','') + '｜' + sc[k]; if(k==='nokid') return '子どもはいない'; if(k==='na') return '分からない'; return ''; };
   const payload = {
     name: st.name,
+    email: st.email,
     main: r.undetermined ? '' : TYPES[r.main].name,
     sub: r.sub ? TYPES[r.sub].name : '',
     undetermined: r.undetermined,
@@ -354,6 +359,7 @@ function formLink(r){
   if (prefillReady()){
     let u = CONFIG.FORM_URL + '?usp=pp_url&' + CONFIG.ENTRY_DIAG + '=' + encodeURIComponent(diagText(r));
     if (CONFIG.ENTRY_NAME && st.name) u += '&' + CONFIG.ENTRY_NAME + '=' + encodeURIComponent(st.name);
+    if (st.email) u += '&emailAddress=' + encodeURIComponent(st.email); // フォームのメール収集が「回答者からの入力」のとき有効
     return u;
   }
   return CONFIG.FORM_URL + '?usp=header';
@@ -376,7 +382,7 @@ function showResult(r){
       <h2>次に、ヒアリングシートへ</h2>
       <p>取扱説明書は、相談で一緒に作ります。<br>そのために、今の状況をヒアリングシートに書いてください（10分くらい）。</p>
       ${prefilled
-        ? `<p class="sub">診断の結果と回答は、シートの「夫のタイプ診断」欄に自動で入っています。そのままで大丈夫です。${st.name?'お名前も入っています（違っていたら直してください）。':''}</p>`
+        ? `<p class="sub">診断の結果と回答は、シートの「夫のタイプ診断」欄に自動で入っています。そのままで大丈夫です。${st.name?'お名前も入っています（違っていたら直してください）。':''}<br>すでにヒアリングシートを送った方は、ここで終わりで大丈夫です。診断の結果は送信済みのシートに結びつきます。</p>`
         : `<p class="sub">シートの「相談したいこと」欄の先頭に、この一行を貼ってください。</p>
            <div class="copybox" id="copybox">${esc(copyText(r))}</div>
            <button class="btn ghost" onclick="doCopy()">この一行をコピー</button>`}
